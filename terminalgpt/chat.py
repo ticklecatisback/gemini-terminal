@@ -8,10 +8,13 @@ from prompt_toolkit import PromptSession
 from tiktoken.core import Encoding
 from yaspin import yaspin
 from yaspin.spinners import Spinners
-
+import logging
+from colorama import Style
 from terminalgpt import config
 from terminalgpt.conversations import ConversationManager
 from terminalgpt.printer import Printer, PrintUtils
+import json
+import base64
 
 
 class ChatManager:
@@ -25,6 +28,7 @@ class ChatManager:
         self.__token_limit: int = kwargs["token_limit"]
         self.__client = genai.GenerativeModel(self.__model)  # Initialize the Gemini client
         self.__total_usage = 0
+
     @property
     def messages(self) -> list:
         return self.__messages
@@ -129,23 +133,77 @@ class ChatManager:
                 sys.exit()
 
     def get_user_answer(self, messages: list):
-        """Returns the answer from Gemini API."""
+        """Returns the answer from the API after sending a properly formatted request."""
         while True:
             try:
-                with yaspin(
-                        Spinners.earth,
-                        text=Style.BRIGHT + "Assistant:" + Style.RESET_ALL,
-                        color="blue",
-                        side="right",
-                ):
-                    # Use the generate_content method of the Gemini API
-                    response = self.__client.generate_content(
-                        prompt=messages  # Adapt this if Gemini uses a different parameter or structure
-                    )
-                    return response.text  # This might need to be adjusted based on the actual response structure
-            except genai.RateLimitError:  # Assuming genai is the correct namespace
-                self.__messages.pop(1)
-                time.sleep(0.5)
+                with yaspin(Spinners.earth, text=Style.BRIGHT + "Assistant:" + Style.RESET_ALL, color="blue",
+                            side="right"):
+                    # Prepare the content parts
+                    parts = []
+                    for msg in messages:
+                        if 'text' in msg:
+                            parts.append({
+                                "text": msg['text']
+                            })
+                        if 'data' in msg:  # Assuming some messages might carry additional structured data
+                            parts.append({
+                                "inline_data": json.dumps(msg['data']),
+                                "mime_type": "application/json"
+                            })
+
+                    request_body = {
+                        "content": {
+                            "parts": parts
+                        }
+                    }
+
+                    # Assuming self.__client is configured to make requests to your API
+                    response = self.__client.generate_content(request_body)
+                    if response and hasattr(response, 'text'):
+                        return response.text
+                    else:
+                        logging.error("Empty or invalid response from API.")
+                        return None
+            except Exception as e:
+                logging.error("An unexpected error occurred: %s", e)
+                raise
+
+    def send_api_request(request_body):
+        """
+        Send the constructed request body to the API endpoint.
+        """
+        url = "https://example.com/api/endpoint"
+        headers = {'Content-Type': 'application/json'}
+
+        # Send the request
+        response = requests.post(url, data=request_body, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            print("Success:", response.text)
+        else:
+            print("Failed:", response.status_code, response.text)
+
+
+    def welcome_message(self, messages: list):
+        try:
+            response = self.get_user_answer(messages)
+            if response and 'choices' in response:
+                welcome_message = response['choices'][0]['message']['content']
+                self.__printer.print_assistant_message(welcome_message)
+            else:
+                self.__printer.print_assistant_message("Failed to receive a valid response.")
+        except KeyboardInterrupt:
+            self.__printer.print_assistant_message(
+                PrintUtils.choose_random_message(PrintUtils.STOPPED_MESSAGES),
+                color=Fore.YELLOW + Style.RESET_ALL,
+            )
+            sys.exit(0)
+        except Exception as error:
+            self.__printer.print_assistant_message(
+                str(error), color=Back.RED + Style.BRIGHT
+            )
+            sys.exit(1)
 
     def exceeding_token_limit(self):
         """Returns True if the total_usage is greater than the token limit with some safe buffer."""

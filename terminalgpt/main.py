@@ -27,7 +27,6 @@ from terminalgpt.printer import Printer, PrinterFactory, PrintUtils
 @click.option("--style", "-s", type=click.Choice(["markdown", "plain"]), default="markdown", show_default=True, help="Output style.")
 @click.option("--token-limit", "-t", type=int, default=0, help="Set the token limit.")
 @click.pass_context
-
 def cli(ctx, model, style: str, token_limit: int = 0):
     """*~ TerminalGPT - Your Personal Terminal Assistant ~*"""
     ctx.ensure_object(dict)
@@ -160,7 +159,8 @@ def install(ctx):
     )
 
     encryption_key = enc_manager.generate_and_store_key()
-    encrypted_secret = enc_manager.encrypt(api_key.encode(), encryption_key)
+    encrypted_secret = enc_manager.encrypt(api_key.encode())
+
 
     if not os.path.exists(os.path.dirname(config.SECRET_PATH)):
         os.makedirs(os.path.dirname(config.SECRET_PATH))
@@ -184,11 +184,11 @@ def install(ctx):
     model = ctx.obj['MODEL']
     print(f"Installing API key for model {model}...")
 
+
 @cli.command(help="Start a new conversation.")
 @click.pass_context
 def new(ctx):
     """Start a new conversation."""
-    click.echo("Starting new conversation...")
     enc_manager: EncryptionManager = ctx.obj["ENC_MNGR"]
     chat_manager: ChatManager = ctx.obj["CHAT"]
     conversation_manager: ConversationManager = ctx.obj["CONV_MANAGER"]
@@ -212,7 +212,8 @@ def new(ctx):
     chat_manager.welcome_message(messages + [config.INIT_WELCOME_MESSAGE])
     chat_manager.messages = messages
     chat_manager.chat_loop()
-    print(f"Starting a new conversation using the model {model}...")
+    print(f"Starting a new conversation using the model {ctx.obj['MODEL']}...")
+
 
 @cli.command(help="One shot question answer.")
 # argument to ask a question
@@ -223,29 +224,22 @@ def new(ctx):
 @click.pass_context
 def one_shot(ctx, question):
     """One shot question answer."""
-
     chat_manager: ChatManager = ctx.obj["CHAT"]
-    enc_manager: EncryptionManager = ctx.obj["ENC_MNGR"]
     printer: Printer = ctx.obj["PRINTER"]
-    conversation_manager: ConversationManager = ctx.obj["CONV_MANAGER"]
 
-    # Configure the Gemini client with the API key
-    genai.configure(api_key=enc_manager.get_api_key())
-    client = genai.GenerativeModel(ctx.obj['MODEL'])
-
-    chat_manager.client = client
-    conversation_manager.client = client
-
+    # Prepare the messages list including the system message and the user's question
     messages = [config.INIT_SYSTEM_MESSAGE]
-
     messages.append({"role": "user", "content": question})
 
+    # Print empty line before displaying the answer
     printer.printt("")
-    # Assuming get_user_answer is adapted to handle Gemini's response structure
-    response = chat_manager.get_user_answer(messages=messages)
-    message = response.text  # Adjust this line based on how Gemini returns responses
 
-    printer.print_assistant_message(message)
+    # Get the response from the Gemini API through the ChatManager's method
+    response = chat_manager.get_user_answer(messages=messages)
+
+    # Use the response directly if it's a string
+    printer.print_assistant_message(response)
+
 
 
 @cli.command(help="Choose a previous conversation to load.")
