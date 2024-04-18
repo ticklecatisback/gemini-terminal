@@ -1,0 +1,5 @@
+include LICENSE
+include README.md
+recursive-include terminalgpt/data *.dat
+recursive-include terminalgpt/resources *.png *.jpg
+recursive-include tests *.py
